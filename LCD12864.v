@@ -105,7 +105,7 @@ begin
 	 set2: begin command(SET_MODE_GRAPHIC, set3); end // extended instruction set
 	 set3: begin command(SET_MODE_GRAPHIC, data0); end //graphic mode on
 	 
-    //set4:   begin  rs<=0; dat<=8'h1; next<=address_vertical;  end  //CLEAR - I know we have to delay for 1.6 ms (22 clkr cycles)
+    //set4:   begin  rs<=0; dat<=8'h1; next<=data0;  end  //CLEAR - I know we have to delay for 1.6 ms (22 clkr cycles)
 	 
 	 //GDRAM address is set by writing 2 consecutive bytes for vertical address and horizontal address. 
 	 //Two-bytes data write to GDRAM for one address. Address counter will automatically increase by one for the next two-byte  data.
@@ -119,21 +119,29 @@ begin
 	 data2: begin
 		rs <= 1;
 		dat <= y+y_initial;
+		//dat <= mem[mem_index];
+		mem_index <= mem_index + 1;
 		//x <= x + 1;
 		next <= data3;
 	 end
 	 data3: begin
 		rs <= 1;
 		dat <= y+y_initial;
+		//dat <= mem[mem_index];
+		mem_index <= mem_index + 1;
 		x <= x + 1;
-		if (x == 7) begin
+		if (x == 15) begin
 			y <= y + 1; //x wraps around
 			x <= 0;
+			next <= data0;
+		end else begin
+			next <= data2;
 		end
-		if(y == 31) begin //test for first N rows
+		if(x == 15 && y == 31) begin //test for first N rows
 			y <= 0;
+			mem_index <= 0;
 		end
-		next <= data0;
+		//next <= data0;
 		led <= y+y_initial;//8'b00000000; //(y+y_initial);
 	 end
 	 //data2: begin write_pixels(loop); end
