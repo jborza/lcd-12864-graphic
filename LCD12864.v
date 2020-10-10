@@ -1,10 +1,12 @@
-module LCD12864 (clk, rs, rw, en,dat);  
+module LCD12864 (clk, rs, rw, en, led, dat);  
 input clk;  
+ output [7:0] led;
  output [7:0] dat; 
  output  rs,rw,en; 
  //tri en; 
  reg e; 
  reg [7:0] dat; 
+ reg [7:0] led;
  reg rs;   
  reg  [15:0] counter; 
  reg [5:0] current,next; //state machine states
@@ -17,6 +19,9 @@ input clk;
  //display coordinates
  reg [3:0] x;
  reg [5:0] y;
+ 
+ wire [7:0] y_out;
+ wire [7:0] x_out;
  
  
  //states
@@ -40,10 +45,16 @@ input clk;
  parameter  loop=6'h2F; 
  parameter  nul=6'h3F;  
  
- parameter y_initial = 8'b1000000;
+ parameter y_initial = 8'b10000000;
+ parameter x_initial = 8'b10000000;
+ 
+ parameter SET_MODE_8BIT = 8'b00110000;
+ parameter SET_MODE_GRAPHIC = 8'b00110110;
+ parameter DISPLAY_ON_CURSOR_OFF_BLINK_OFF = 8'b00001100;
+ 
  
  task write_pixels;
-//	input [5:0] next_state;
+	input [5:0] exit_state;
 	
 	begin
 		rs <= 1;
@@ -53,17 +64,18 @@ input clk;
 		if(x == 15) begin
 			x <= 0;
 			y <= y + 1;
-			next <= address_vertical;
 		end
 		if(mem_index == 1023) begin
-			next <= loop;
+			next <= exit_state;
+		end else begin
+			next <= data0;
 		end
 	end
  endtask
 
  task command;
 	input [7:0] data;
-	input [7:0] next_state;
+	input [5:0] next_state;
 	
 	begin
 		rs <= 0;
@@ -75,38 +87,58 @@ input clk;
  
  
  initial begin;
-	$readmemb("ram_pattern_0xaa.txt", mem);
+	$readmemb("rom2.txt", mem);
  end
  
 always @(posedge clk)        
  begin 
   counter=counter+1; 
-  if(counter==16'h000f)  
+  if(counter==16'h000f) //clkr triggered every 32 ticks: 50 MHZ -> 1.5625 MHz ?
   clkr=~clkr; 
 end 
 always @(posedge clkr) 
 begin 
  current=next; 
   case(current) 
-    set0: begin command(8'b00110000, set1); mem_index <= 0; y <= y_initial; x<=0; end // 8-bit interface   
-	 set1: begin command(8'b00001100, set2); end // display on       
-	 set2: begin command(8'b00110110, set3); end // extended instruction set
-	 set3: begin command(8'b00110110, set4); end //graphic mode on  
+    set0: begin command(SET_MODE_8BIT, set1); mem_index <= 0; y <= 0; x<=0; end // 8-bit interface   
+	 set1: begin command(DISPLAY_ON_CURSOR_OFF_BLINK_OFF, set2); end // display on       
+	 set2: begin command(SET_MODE_GRAPHIC, set3); end // extended instruction set
+	 set3: begin command(SET_MODE_GRAPHIC, data0); end //graphic mode on
 	 
-    set4:   begin  rs<=0; dat<=8'h1; next<=address_vertical;  end  //CLEAR - I know we have to delay for 1.6 ms (22 clkr cycles)
+    //set4:   begin  rs<=0; dat<=8'h1; next<=address_vertical;  end  //CLEAR - I know we have to delay for 1.6 ms (22 clkr cycles)
 	 
 	 //GDRAM address is set by writing 2 consecutive bytes for vertical address and horizontal address. 
-	 //Two-bytes data write to GDRAM for one address. Address counter will automatically increase by one for the next two-byte data.
+	 //Two-bytes data write to GDRAM for one address. Address counter will automatically increase by one for the next two-byte  data.
 	 
 	 
-	 address_vertical:   begin command(y, address_horizontal); end   
-	 address_horizontal: begin command(8'b10000000, data0); end  
+	 //address_vertical:   begin command(y, address_horizontal); end   
+	 //address_horizontal: begin command(8'b10000000, data0); end  
 	 
-	 data0: begin
-		write_pixels();
+	 data0: begin command(y + y_initial, data1); end //address_vertical
+	 data1: begin command(x + x_initial, data2); end //address_horizontal
+	 data2: begin
+		rs <= 1;
+		dat <= y+y_initial;
+		//x <= x + 1;
+		next <= data3;
 	 end
+	 data3: begin
+		rs <= 1;
+		dat <= y+y_initial;
+		x <= x + 1;
+		if (x == 7) begin
+			y <= y + 1; //x wraps around
+			x <= 0;
+		end
+		if(y == 31) begin //test for first N rows
+			y <= 0;
+		end
+		next <= data0;
+		led <= y+y_initial;//8'b00000000; //(y+y_initial);
+	 end
+	 //data2: begin write_pixels(loop); end
 	 		
-	 loop: begin rs <= 0; dat<=8'h00000001; /*standby*/  next <= set0; end
+	 loop: begin rs <= 0; dat<=8'b00000001; /*standby*/  next <= set0; end
 
    default:   next=set0; 
     endcase 
