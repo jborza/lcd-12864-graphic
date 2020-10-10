@@ -4,3 +4,5 @@ output_files
 *.cmp
 *.txt
 *.bak
+*.rpt
+simulation
