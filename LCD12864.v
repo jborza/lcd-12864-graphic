@@ -7,14 +7,19 @@ input clk;
  reg [7:0] dat; 
  reg rs;   
  reg  [15:0] counter; 
- reg [5:0] current,next; 
+ reg [5:0] current,next; //state machine states
  reg clkr; 
  reg [1:0] cnt; 
 
  reg [7:0] mem [0:1023];
- reg [10:0] mem_index;
+ reg [9:0] mem_index;
+ 
+ //display coordinates
+ reg [3:0] x;
+ reg [5:0] y;
  
  
+ //states
  parameter  set0=6'h0; 
  parameter  set1=6'h1; 
  parameter  set2=6'h2; 
@@ -35,34 +40,42 @@ input clk;
  parameter  loop=6'h2F; 
  parameter  nul=6'h3F;  
  
+ parameter y_initial = 8'b1000000;
+ 
  task write_pixels;
-	input [5:0] next_state;
+//	input [5:0] next_state;
 	
 	begin
 		rs <= 1;
 		dat <= mem[mem_index];
 		mem_index <= mem_index + 1;
-		if(mem_index == 1023) begin
-			next <= next_state;
+		x <= x + 1;
+		if(x == 15) begin
+			x <= 0;
+			y <= y + 1;
+			next <= address_vertical;
 		end
- endtask;
- 
- task write_row;
-	input [2:0] mem_row;
-	input [5:0] next_state;
-
-	begin
-		rs <= 1;
-		dat <= mem[mem_row*16 + mem_index];
-		mem_index <= mem_index + 1;
-		if(mem_index == 15) begin
-			next <= next_state;
+		if(mem_index == 1023) begin
+			next <= loop;
 		end
 	end
  endtask
+
+ task command;
+	input [7:0] data;
+	input [7:0] next_state;
+	
+	begin
+		rs <= 0;
+		dat <= data;
+		next <= next_state;
+	end
+ endtask
+
+ 
  
  initial begin;
-	$readmemb("rom.txt", mem);
+	$readmemb("ram_pattern_0xaa.txt", mem);
  end
  
 always @(posedge clk)        
@@ -75,40 +88,26 @@ always @(posedge clkr)
 begin 
  current=next; 
   case(current) 
-    set0:   begin  rs<=0; dat<=8'b00110110; next<=set1; end //00110000 - set 8-bit interface, extended instruction set, graphic on
-    set1:   begin  rs<=0; dat<=8'h0c; next<=set2; end //00001100 - display on, cursor off, blink off
-    set2:   begin  rs<=0; dat<=8'h6; next<=set3; end  //00000110 - set cursor position and display shift?
-    set3:   begin  rs<=0; dat<=8'h1; next<=address_vertical; mem_index <= 0; end  //CLEAR
+    set0: begin command(8'b00110000, set1); mem_index <= 0; y <= y_initial; x<=0; end // 8-bit interface   
+	 set1: begin command(8'b00001100, set2); end // display on       
+	 set2: begin command(8'b00110110, set3); end // extended instruction set
+	 set3: begin command(8'b00110110, set4); end //graphic mode on  
 	 
-	 //GDRAM address is set by writing 2 consecutive bytes for vertical address and horizontal address. Two-bytes data write to GDRAM for one address. Address counter will automatically increase by one for the next two-byte data. The procedure is as followings. 
-	 //set GDRAM address 0,0
-	 //write 0101001100011100
+    set4:   begin  rs<=0; dat<=8'h1; next<=address_vertical;  end  //CLEAR - I know we have to delay for 1.6 ms (22 clkr cycles)
 	 
-	 address_vertical: begin rs <= 0;   dat <= 8'b10000000; next<=address_horizontal; end
-	 address_horizontal: begin rs <= 0; dat <= 8'b10000000; next<=data0; end
+	 //GDRAM address is set by writing 2 consecutive bytes for vertical address and horizontal address. 
+	 //Two-bytes data write to GDRAM for one address. Address counter will automatically increase by one for the next two-byte data.
 	 
-	 data0: begin rs <= 1; dat <= 8'b01010011; next<=data1; end
-	 data1: begin rs <= 1; dat <= 8'b00011100; next<=data2; end
-	 data2: begin rs <= 1; dat <= 8'b00111100; next<=data3; end
-	 data3: begin rs <= 1; dat <= 8'b00011111; next<=loop; end
 	 
-	  
-//	 row0: begin
-//		write_row(0, set4);
-//	 end
-//
-	  loop: begin rs <= 0; dat<=8'h00000001; /*standby*/  next <= loop; end
+	 address_vertical:   begin command(y, address_horizontal); end   
+	 address_horizontal: begin command(8'b10000000, data0); end  
+	 
+	 data0: begin
+		write_pixels();
+	 end
+	 		
+	 loop: begin rs <= 0; dat<=8'h00000001; /*standby*/  next <= set0; end
 
-	 //reset?
-//     nul:   begin rs<=0;  dat<=8'h00;                    //???
-//              if(cnt!=2'h2)  
-//                  begin  
-//                       e<=0;next<=set0;cnt<=cnt+1;  
-//                  end  
-//                   else  
-//                     begin next<=nul; e<=1; 
-//                    end    
-//              end 
    default:   next=set0; 
     endcase 
  end 
