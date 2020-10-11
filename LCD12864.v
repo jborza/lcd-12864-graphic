@@ -87,7 +87,7 @@ input clk;
  
  
  initial begin;
-	$readmemb("rom2.txt", mem);
+	$readmemb("rom_lenna.txt", mem);
  end
  
 always @(posedge clk)        
@@ -105,8 +105,6 @@ begin
 	 set2: begin command(SET_MODE_GRAPHIC, set3); end // extended instruction set
 	 set3: begin command(SET_MODE_GRAPHIC, data0); end //graphic mode on
 	 
-    //set4:   begin  rs<=0; dat<=8'h1; next<=data0;  end  //CLEAR - I know we have to delay for 1.6 ms (22 clkr cycles)
-	 
 	 //GDRAM address is set by writing 2 consecutive bytes for vertical address and horizontal address. 
 	 //Two-bytes data write to GDRAM for one address. Address counter will automatically increase by one for the next two-byte  data.
 	 
@@ -117,17 +115,19 @@ begin
 	 data0: begin command(y + y_initial, data1); end //address_vertical
 	 data1: begin command(x + x_initial, data2); end //address_horizontal
 	 data2: begin
+		//first 8 pixels
 		rs <= 1;
-		dat <= y+y_initial;
-		//dat <= mem[mem_index];
+		//dat <= y+y_initial;
+		dat <= mem[mem_index];
 		mem_index <= mem_index + 1;
 		//x <= x + 1;
 		next <= data3;
 	 end
 	 data3: begin
+		//next 8 pixels
 		rs <= 1;
-		dat <= y+y_initial;
-		//dat <= mem[mem_index];
+		//dat <= y+y_initial;
+		dat <= mem[mem_index];
 		mem_index <= mem_index + 1;
 		x <= x + 1;
 		if (x == 15) begin
@@ -141,7 +141,6 @@ begin
 			y <= 0;
 			mem_index <= 0;
 		end
-		//next <= data0;
 		led <= y+y_initial;//8'b00000000; //(y+y_initial);
 	 end
 	 //data2: begin write_pixels(loop); end
