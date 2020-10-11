@@ -1,14 +1,12 @@
-module LCD12864 (clk, rs, rw, en, led, dat);  
+module LCD12864 (clk, rs, rw, en, dat);  
 input clk;  
- output [7:0] led;
  output [7:0] dat; 
  output  rs,rw,en; 
  //tri en; 
  reg e; 
  reg [7:0] dat; 
- reg [7:0] led;
  reg rs;   
- reg  [15:0] counter; 
+ reg  [10:0] counter; 
  reg [5:0] current,next; //state machine states
  reg clkr; 
  reg [1:0] cnt; 
@@ -19,6 +17,8 @@ input clk;
  //display coordinates
  reg [3:0] x;
  reg [5:0] y;
+ 
+ reg [7:0] pattern;
  
  wire [7:0] y_out;
  wire [7:0] x_out;
@@ -35,7 +35,7 @@ input clk;
 
  
  parameter address_vertical = 7, address_horizontal=8;
- parameter data0=9, data1=10, data2=11, data3=12;
+ parameter data_address_vertical=9, data_address_horizontal=10, data2=11, data3=12;
  
  parameter  row0=6'h7; 
  parameter  row1=6'h8; 
@@ -68,7 +68,7 @@ input clk;
 		if(mem_index == 1023) begin
 			next <= exit_state;
 		end else begin
-			next <= data0;
+			next <= data_address_vertical;
 		end
 	end
  endtask
@@ -84,41 +84,43 @@ input clk;
 	end
  endtask
 
- 
- 
  initial begin;
-	$readmemb("rom_lenna.txt", mem);
+	$readmemb("rom3.txt", mem);
  end
  
 always @(posedge clk)        
  begin 
+  //we want to hit 72 us per display instruction. 72 us 
   counter=counter+1; 
-  if(counter==16'h000f) //clkr triggered every 32 ticks: 50 MHZ -> 1.5625 MHz ?
-  clkr=~clkr; 
+  //clkr inverted on every overflow of 11-bit counter -> is toggled every 50,000,000 / (2^11*2) = 12 khz
+  if(counter==12'h000f) begin										
+		clkr=~clkr; 
+	end
 end 
 always @(posedge clkr) 
 begin 
  current=next; 
   case(current) 
-    set0: begin command(SET_MODE_8BIT, set1); mem_index <= 0; y <= 0; x<=0; end // 8-bit interface   
+    set0: begin command(SET_MODE_8BIT, set1); mem_index <= 0; y <= 0; x<=0; pattern <= 0; end // 8-bit interface   
 	 set1: begin command(DISPLAY_ON_CURSOR_OFF_BLINK_OFF, set2); end // display on       
 	 set2: begin command(SET_MODE_GRAPHIC, set3); end // extended instruction set
-	 set3: begin command(SET_MODE_GRAPHIC, data0); end //graphic mode on
+	 set3: begin command(SET_MODE_GRAPHIC, data_address_vertical); end //graphic mode on
 	 
 	 //GDRAM address is set by writing 2 consecutive bytes for vertical address and horizontal address. 
 	 //Two-bytes data write to GDRAM for one address. Address counter will automatically increase by one for the next two-byte  data.
 	 
 	 
 	 //address_vertical:   begin command(y, address_horizontal); end   
-	 //address_horizontal: begin command(8'b10000000, data0); end  
+	 //address_horizontal: begin command(8'b10000000, data_address_vertical); end  
 	 
-	 data0: begin command(y + y_initial, data1); end //address_vertical
-	 data1: begin command(x + x_initial, data2); end //address_horizontal
+	 data_address_vertical: begin command(y + y_initial, data_address_horizontal); end //address_vertical
+	 data_address_horizontal: begin command(x + x_initial, data2); end //address_horizontal
 	 data2: begin
 		//first 8 pixels
 		rs <= 1;
 		//dat <= y+y_initial;
 		dat <= mem[mem_index];
+		//dat <= pattern + x;
 		mem_index <= mem_index + 1;
 		//x <= x + 1;
 		next <= data3;
@@ -128,20 +130,21 @@ begin
 		rs <= 1;
 		//dat <= y+y_initial;
 		dat <= mem[mem_index];
+		//dat <= pattern + y + x;
 		mem_index <= mem_index + 1;
 		x <= x + 1;
 		if (x == 15) begin
 			y <= y + 1; //x wraps around
 			x <= 0;
-			next <= data0;
+			next <= data_address_vertical;
 		end else begin
 			next <= data2;
 		end
 		if(x == 15 && y == 31) begin //test for first N rows
 			y <= 0;
 			mem_index <= 0;
+			pattern <= pattern + 1;
 		end
-		led <= y+y_initial;//8'b00000000; //(y+y_initial);
 	 end
 	 //data2: begin write_pixels(loop); end
 	 		
